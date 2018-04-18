@@ -23,14 +23,24 @@ using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 using HistorianService.Attributes;
 using HistorianService.Models;
+using HistorianService.Repository;
 
 namespace IO.Swagger.Controllers
-{ 
+{
     /// <summary>
     /// 
     /// </summary>
     public class DefaultApiController : Controller
-    { 
+    {
+        private readonly IStore _store;
+        private readonly ILogger _logger;
+
+        public DefaultApiController(IStore store, ILogger<DefaultApiController> logger)
+        {
+            this._store = store;
+            this._logger = logger;
+        }
+
         /// <summary>
         /// Add data to the device history
         /// </summary>
@@ -49,25 +59,28 @@ namespace IO.Swagger.Controllers
         [SwaggerResponse(statusCode: 201, type: typeof(float?), description: "Data added successfully.")]
         [SwaggerResponse(statusCode: 400, type: typeof(Error), description: "Invalid input parameter.")]
         [SwaggerResponse(statusCode: 500, type: typeof(Error), description: "An unexpected error occurred.")]
-        public virtual IActionResult AddDeviceData([FromRoute][Required][RegularExpression("/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/")][StringLength(36, MinimumLength=36)]string deviceId, [FromQuery][Required()][RegularExpression("/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/")][StringLength(36, MinimumLength=36)]string datapointId, [FromQuery][Required()]DateTime? timestamp, [FromQuery][Required()]float? value)
-        { 
-            //TODO: Uncomment the next line to return response 201 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
-            // return StatusCode(201, default(float?));
+        public virtual IActionResult AddDeviceData(
+            [FromRoute][Required][RegularExpression("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")][StringLength(36, MinimumLength = 36)]string deviceId, 
+            [FromQuery][Required()][RegularExpression("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")][StringLength(36, MinimumLength = 36)]string datapointId, 
+            [FromQuery][Required()]DateTime? timestamp, [FromQuery][Required()]float? value)
+        {
+            var key = $"{deviceId};{datapointId}";
 
-            //TODO: Uncomment the next line to return response 400 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
-            // return StatusCode(400, default(Error));
+             if (!this._store.Exists(key) && value.HasValue)
+             {
+                 this._store.Add(key, value.Value);
+                 this._logger.LogInformation($"Added {value.Value} for {key} to the store at {timestamp}.");
+             }
 
-            //TODO: Uncomment the next line to return response 500 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
-            // return StatusCode(500, default(Error));
+             if (!value.HasValue){
+                 this._logger.LogError($"No value found for {key}.");
+                 return BadRequest($"No data value for device: {deviceId} and datapoint {datapointId}");
+             }
 
-            string exampleJson = null;
-            exampleJson = "0.8008282";
-            
-            var example = exampleJson != null
-            ? JsonConvert.DeserializeObject<float?>(exampleJson)
-            : default(float?);
-            //TODO: Change the data returned
-            return new ObjectResult(example);
+             var average = this._store.GetAll().Where( i => i.Key.StartsWith(deviceId)).Average( v => v.Value);
+
+             this._logger.LogInformation($"Returning {average}.");
+             return Created("", average);
         }
     }
 }
