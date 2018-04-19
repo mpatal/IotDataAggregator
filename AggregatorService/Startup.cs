@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AggregatorService.Repository;
+using AggregatorService.ServiceClients;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -42,6 +44,13 @@ namespace AggregatorService
              {
                  c.SwaggerDoc("v1", new Info { Title = "API V1", Version = "v1" });
              });
+
+             // Add the store as a singleton
+             services.AddSingleton<IStore>(new Store());
+
+             // Add the historian client
+             services.AddTransient<IHistorianService>( 
+                 (s) => new HistorianService(new Uri(Configuration["TEMPHISTORIAN"])));
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

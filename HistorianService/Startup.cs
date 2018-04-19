@@ -39,7 +39,7 @@ namespace HistorianService
 
             services.AddSwaggerGen(c =>
             {
-                c.SwaggerDoc("v1", new Info { Title = "API V1", Version = "v1" });
+                c.SwaggerDoc("v1", new Info { Title = "Historian Service", Version = "v1" });
             });
 
             // Add the store as a singleton

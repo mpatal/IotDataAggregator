@@ -23,14 +23,29 @@ using Newtonsoft.Json;
 using System.ComponentModel.DataAnnotations;
 using AggregatorService.Attributes;
 using AggregatorService.Models;
+using AggregatorService.Repository;
+using System.ComponentModel;
+using AggregatorService.ServiceClients;
+using Microsoft.Rest;
+using Polly;
 
 namespace IO.Swagger.Controllers
-{ 
+{
     /// <summary>
     /// 
     /// </summary>
     public class DefaultApiController : Controller
-    { 
+    {
+        private readonly IStore _store;
+        private readonly ILogger<DefaultEventAttribute> _logger;
+        private readonly IHistorianService _historian;
+        public DefaultApiController(IStore store, ILogger<DefaultEventAttribute> logger, IHistorianService historian)
+        {
+            this._store = store;
+            this._logger = logger;
+            this._historian = historian;
+        }
+
         /// <summary>
         /// Add data generated from a device to the aggregator
         /// </summary>
@@ -48,19 +63,46 @@ namespace IO.Swagger.Controllers
         [SwaggerOperation("AddDeviceData")]
         [SwaggerResponse(statusCode: 401, type: typeof(Error), description: "Invalid input parameter.")]
         [SwaggerResponse(statusCode: 500, type: typeof(Error), description: "An unexpected error occurred.")]
-        public virtual IActionResult AddDeviceData([FromRoute][Required]string deviceType, [FromRoute][Required][RegularExpression("/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/")][StringLength(36, MinimumLength=36)]string deviceId, [FromQuery][Required()][RegularExpression("/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/")][StringLength(36, MinimumLength=36)]string dataPointId, [FromQuery][Required()]float? value)
-        { 
-            //TODO: Uncomment the next line to return response 201 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
-            // return StatusCode(201);
+        public virtual IActionResult AddDeviceData([FromRoute][Required]string deviceType, 
+                                    [FromRoute][Required][RegularExpression("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")][StringLength(36, MinimumLength = 36)]string deviceId, 
+                                    [FromQuery][Required()][RegularExpression("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")][StringLength(36, MinimumLength = 36)]string dataPointId, [FromQuery][Required()]float? value)
+        {
+            if (!deviceType.Equals("TEMP"))
+             {
+                 this._logger.LogError($"Device type {deviceType} is not supported.");
+                 return BadRequest($"Unsupported device type {deviceType}");
+             }
+             float? averageValue = default(float?);
 
-            //TODO: Uncomment the next line to return response 401 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
-            // return StatusCode(401, default(Error));
+             var retryPolicy = Policy
+                 .Handle<HttpOperationException>()
+                 .WaitAndRetry(5, retryAttempt =>
+                     TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))
+                 );
 
-            //TODO: Uncomment the next line to return response 500 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
-            // return StatusCode(500, default(Error));
+             averageValue = Convert.ToSingle(retryPolicy.Execute(() =>
+               this._historian.AddDeviceData(deviceId, dataPointId, DateTimeOffset.UtcNow.DateTime, value)));
 
+             if (!averageValue.HasValue)
+             {
+                 var message = $"Cannot calculate the average.";
+                 this._logger.LogError(message);
+                 return BadRequest(message);
+             }
 
-            throw new NotImplementedException();
+             var key = $"{deviceType};{deviceId}";
+             if (this._store.Exists(key))
+             {
+                 this._logger.LogInformation($"Updating {key} with {averageValue.Value}");
+                 this._store.Update(key, averageValue.Value);
+             }
+             else
+             {
+                 this._logger.LogInformation($"Added {key} with {averageValue.Value}");
+                 this._store.Add(key, averageValue.Value);
+             }
+
+             return Ok(averageValue.Value);
         }
 
         /// <summary>
@@ -81,7 +123,7 @@ namespace IO.Swagger.Controllers
         [SwaggerResponse(statusCode: 400, type: typeof(Error), description: "Invalid input parameter.")]
         [SwaggerResponse(statusCode: 500, type: typeof(Error), description: "An unexpected error occurred.")]
         public virtual IActionResult AverageByDeviceTypeDeviceTypeGet([FromRoute][Required]string deviceType, [FromQuery][Required()]DateTime? fromTime, [FromQuery][Required()]DateTime? toTime)
-        { 
+        {
             //TODO: Uncomment the next line to return response 200 or use other options such as return this.NotFound(), return this.BadRequest(..), ...
             // return StatusCode(200, default(DeviceDataPoints));
 
@@ -93,7 +135,7 @@ namespace IO.Swagger.Controllers
 
             string exampleJson = null;
             exampleJson = "\"\"";
-            
+
             var example = exampleJson != null
             ? JsonConvert.DeserializeObject<DeviceDataPoints>(exampleJson)
             : default(DeviceDataPoints);
