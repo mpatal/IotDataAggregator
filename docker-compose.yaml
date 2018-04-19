@@ -1,0 +1,14 @@
+version: '3'
+services:
+  temphistorian:
+    build: 
+      context: ./HistorianService
+    ports:
+      - "8181:5000"
+  aggregator:
+    build: 
+      context: ./AggregatorService
+    ports:
+      - "36768:5000"
+    environment: 
+      TEMPHISTORIAN: http://temphistorian:8181
