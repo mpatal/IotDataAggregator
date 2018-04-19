@@ -11,4 +11,4 @@ services:
     ports:
       - "36768:5000"
     environment: 
-      TEMPHISTORIAN: http://temphistorian:8181
+      TEMPHISTORIAN: http://temphistoriand:8181
